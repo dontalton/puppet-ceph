@@ -30,18 +30,23 @@ class ceph::compute(
 
   exec { 'get-or-set volumes key':
     command => "ceph auth get-or-create client.volumes mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=${poolname}' > /etc/ceph/client.volumes",
-    require => Package['ceph-common'],
+    require => [ Package['ceph'], Ceph::Key['admin'] ],
   }
 
   exec { 'get-or-set virsh secret':
-    command => "virsh secret-define --file secret.xml | awk '{print $2}' | sed '/^$/d' > /etc/ceph/virsh.secret",
-    onlyif  => 'test ! -f /etc/ceph/virsh.secret',
-    require => File['/etc/ceph/secret.xml'],
+    command => '/usr/bin/virsh secret-define --file secret.xml | /usr/bin/awk \'{print $2}\' | sed \'/^$/d\' > /etc/ceph/virsh.secret',
+    creates => "/etc/ceph/virsh.secret",
+    require => [ Package['ceph'], Ceph::Key['admin'], File['/etc/ceph/secret.xml'] ],
   }
 
   exec { 'set-secret-value virsh':
     command => "virsh secret-set-value --secret $(cat /etc/ceph/virsh.secret) --base64 $(ceph auth get-key client.volumes)",
     require => Exec['get-or-set virsh secret'],
+  }
+
+  exec { 'create the pool':
+    command => "ceph osd pool create volumes 128",
+    require => Exec['set-secret-value virsh'],
   }
 
 }
